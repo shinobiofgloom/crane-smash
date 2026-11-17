@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Crane Smash</title>
+<style>
+  :root {
+    --navy: #1d2b53;
+    --gelb: #ffcc00;
+    --gelb-dunkel: #e0a800;
+    --gruen: #3bceac;
+    --rot: #ff5d73;
+    --weiss: #ffffff;
+    --schrift: "Trebuchet MS", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+    background: #5cb8f0; font-family: var(--schrift); color: var(--weiss);
+    user-select: none; -webkit-user-select: none; touch-action: none; overscroll-behavior: none;
+  }
+  canvas#spielfeld { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  svg.icon { width: 1em; height: 1em; display: inline-block; vertical-align: -0.15em; }
+
+  /* ---------- Anzeige oben ---------- */
+  #hud {
+    position: fixed; left: 0; right: 0; top: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px;
+    padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left));
+    pointer-events: none;
+  }
+  .pille {
+    background: rgba(29, 43, 83, 0.82); border: 3px solid var(--navy); border-radius: 999px;
+    padding: 4px 12px; font-weight: 900; font-size: 17px; line-height: 1.2; white-space: nowrap;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.25);
+  }
+  #hudLinks { display: flex; align-items: center; gap: 8px; order: 1; }
+  #birnenAnzeige { display: flex; gap: 3px; font-size: 20px; }
+  #birnenAnzeige .leer { opacity: 0.28; }
+  #hudMitte { order: 2; flex: 1 1 200px; display: flex; justify-content: center; min-width: 160px; }
+  #hudRechts { display: flex; align-items: center; gap: 8px; order: 3; }
+  #fortschritt {
+    position: relative; width: min(100%, 340px); height: 28px; border-radius: 999px;
+    background: rgba(29, 43, 83, 0.82); border: 3px solid var(--navy); overflow: visible;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.25);
+  }
+  #balken {
+    position: absolute; left: 2px; top: 2px; bottom: 2px; width: 0; border-radius: 999px;
+    background: linear-gradient(#ffe066, #ffb400); transition: width 0.25s ease-out;
+  }
+  #fortschritt.erreicht #balken { background: linear-gradient(#7cf0c8, #2fb894); }
+  #prozentText {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 15px; text-shadow: 0 2px 0 var(--navy), 0 0 3px var(--navy);
+  }
+  .marke {
+    position: absolute; top: -9px; width: 22px; height: 22px; margin-left: -11px; font-size: 22px;
+    color: #9aa6c4; filter: drop-shadow(0 2px 0 var(--navy));
+  }
+  .marke.an { color: var(--gelb); }
+  #zielStrich { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: rgba(255,255,255,0.85); }
+  #muenzAnzeige { display: flex; align-items: center; gap: 5px; }
+  #muenzAnzeige svg { font-size: 20px; }
+  .rundknopf {
+    pointer-events: auto; width: 44px; height: 44px; border-radius: 50%; border: 3px solid var(--navy);
+    background: var(--weiss); color: var(--navy); font-size: 22px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.25); cursor: pointer; padding: 0;
+  }
+  .rundknopf:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
+  @media (max-width: 560px) {
+    #hudMitte { order: 4; flex-basis: 100%; }
+    .pille { font-size: 15px; }
+  }
+
+  /* ---------- Levelbanner ---------- */
+  #banner {
+    position: fixed; left: 50%; top: 32%; transform: translate(-50%, -50%) scale(0.8); z-index: 4;
+    text-align: center; pointer-events: none; opacity: 0; transition: opacity 0.25s, transform 0.25s;
+    font-weight: 900; text-shadow: 0 4px 0 var(--navy), 0 0 6px var(--navy);
+  }
+  #banner.sichtbar { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #bannerTitel { font-size: clamp(34px, 8vw, 60px); color: var(--weiss); -webkit-text-stroke: 2px var(--navy); }
+  #bannerZiel { font-size: clamp(20px, 5vw, 30px); color: var(--gelb); margin-top: 4px; }
+
+  /* ---------- Fenster ---------- */
+  .schleier {
+    position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+    background: rgba(10, 20, 50, 0.45); padding: 16px; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .schleier.offen { opacity: 1; pointer-events: auto; }
+  .karte {
+    width: min(420px, 100%); max-height: 100%; overflow-y: auto; background: #fff7e6; color: var(--navy);
+    border: 4px solid var(--navy); border-radius: 22px; padding: 16px 16px 18px; text-align: center;
+    box-shadow: 0 8px 0 rgba(0,0,0,0.3); transform: scale(0.9); transition: transform 0.2s;
+  }
+  .schleier.offen .karte { transform: scale(1); }
+  #ergSterne { display: flex; justify-content: center; gap: 6px; font-size: 54px; margin-top: -2px; }
+  #ergSterne .s { color: #d5d9e4; filter: drop-shadow(0 3px 0 var(--navy)); transform: scale(0.5); opacity: 0.6; transition: transform 0.3s cubic-bezier(.3,1.8,.5,1), color 0.2s, opacity 0.2s; }
+  #ergSterne .s:nth-child(2) { font-size: 66px; margin-top: -10px; }
+  #ergSterne .s.an { color: var(--gelb); transform: scale(1); opacity: 1; }
+  #ergTitel { font-size: 30px; font-weight: 900; margin: 2px 0 0; }
+  #ergProzent { font-size: 18px; font-weight: 800; opacity: 0.8; margin-bottom: 8px; }
+  #ergPosten { list-style: none; margin: 0 0 8px; padding: 0; text-align: left; }
+  #ergPosten li {
+    display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 10px; font-weight: 800; font-size: 16px;
+  }
+  #ergPosten li:nth-child(odd) { background: rgba(29, 43, 83, 0.06); }
+  #ergPosten li .wert { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+  #ergPosten li svg { font-size: 20px; }
+  #ergSumme { font-size: 30px; font-weight: 900; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 4px 0 12px; }
+  .knoepfe { display: flex; gap: 10px; justify-content: center; }
+  .knopf {
+    position: relative; border: 4px solid var(--navy); border-radius: 16px; background: var(--weiss); color: var(--navy);
+    font-family: var(--schrift); font-weight: 900; font-size: 18px; padding: 10px 14px; min-height: 56px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 4px 0 var(--navy);
+  }
+  .knopf:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--navy); }
+  .knopf.haupt { background: var(--gruen); color: var(--weiss); text-shadow: 0 2px 0 var(--navy); flex: 1 1 auto; font-size: 22px; }
+  .knopf svg { font-size: 24px; }
+  .knopf .punkt {
+    position: absolute; top: -10px; right: -8px; width: 24px; height: 24px; border-radius: 50%; background: var(--rot);
+    color: var(--weiss); border: 3px solid var(--navy); font-size: 14px; line-height: 18px; display: none;
+  }
+  .knopf .punkt.an { display: block; animation: hupf 0.9s infinite; }
+  @keyframes hupf { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+
+  #ladenMuenzen { font-size: 24px; font-weight: 900; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 10px; }
+  #ladenGitter { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .upkarte {
+    border: 3px solid var(--navy); border-radius: 16px; background: var(--weiss); padding: 10px 8px 8px;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .upkarte .bild { font-size: 40px; line-height: 1; }
+  .upkarte .name { font-weight: 900; font-size: 15px; }
+  .upkarte .info { font-size: 12px; font-weight: 700; opacity: 0.7; min-height: 15px; }
+  .upkarte .stufen { display: flex; gap: 4px; margin: 2px 0 4px; }
+  .upkarte .stufen i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--navy); background: #e3e7f0; }
+  .upkarte .stufen i.an { background: var(--gelb); }
+  .upkarte button {
+    width: 100%; min-height: 40px; border: 3px solid var(--navy); border-radius: 12px; background: var(--gelb); color: var(--navy);
+    font-family: var(--schrift); font-weight: 900; font-size: 17px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;
+    box-shadow: 0 3px 0 var(--navy);
+  }
+  .upkarte button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--navy); }
+  .upkarte button:disabled { background: #e3e7f0; color: #8a93a8; cursor: default; box-shadow: none; transform: none; }
+  .upkarte.gekauft { animation: blitz 0.4s; }
+  @keyframes blitz { 0% { transform: scale(1); } 40% { transform: scale(1.08); background: #fff4c2; } 100% { transform: scale(1); } }
+</style>
+</head>
+<body>
+<!-- Symbole (alle aus Code, keine Bilddateien) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-muenze" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" fill="#ffcc1a" stroke="#1d2b53" stroke-width="2.4"/>
+      <circle cx="12" cy="12" r="6.2" fill="none" stroke="#c98400" stroke-width="2"/>
+      <path d="M12 8.2l1.2 2.5 2.7.3-2 1.8.6 2.7L12 14.1l-2.5 1.4.6-2.7-2-1.8 2.7-.3z" fill="#fff3b0"/>
+    </symbol>
+    <symbol id="i-stern" viewBox="0 0 24 24">
+      <path d="M12 2.2l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" fill="currentColor" stroke="#1d2b53" stroke-width="1.8" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-birne" viewBox="0 0 24 24">
+      <circle cx="12" cy="4" r="2.4" fill="none" stroke="currentColor" stroke-width="2"/>
+      <circle cx="12" cy="14" r="8" fill="currentColor"/>
+      <ellipse cx="9" cy="11" rx="2.4" ry="1.4" fill="rgba(255,255,255,0.45)" transform="rotate(-30 9 11)"/>
+    </symbol>
+    <symbol id="i-ton-an" viewBox="0 0 24 24">
+      <path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>
+      <path d="M16 8.5a5 5 0 010 7M18.5 6a8.5 8.5 0 010 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-ton-aus" viewBox="0 0 24 24">
+      <path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>
+      <path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-weiter" viewBox="0 0 24 24">
+      <path d="M7 4.5l12 7.5-12 7.5z" fill="currentColor" stroke="#1d2b53" stroke-width="2" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-nochmal" viewBox="0 0 24 24">
+      <path d="M19 12a7 7 0 11-2.1-5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      <path d="M18.5 2.5v5h-5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-werkzeug" viewBox="0 0 24 24">
+      <path d="M14.5 3.5a5 5 0 00-4.8 6.4L3.5 16.1a2 2 0 002.8 2.8l6.2-6.2a5 5 0 006.4-4.8l-2.8 2.8-2.6-.4-.4-2.6z" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-schloss" viewBox="0 0 24 24">
+      <rect x="5" y="10" width="14" height="10" rx="2" fill="currentColor"/>
+      <path d="M8 10V7a4 4 0 018 0v3" fill="none" stroke="currentColor" stroke-width="2.4"/>
+    </symbol>
+    <symbol id="i-schwer" viewBox="0 0 24 24">
+      <circle cx="12" cy="14" r="7.5" fill="#2d3142" stroke="#1d2b53" stroke-width="1.5"/>
+      <circle cx="12" cy="4.5" r="2.2" fill="none" stroke="#2d3142" stroke-width="2"/>
+      <path d="M12 10.5v6m-3-3l3 3 3-3" fill="none" stroke="#ffcc00" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-kette" viewBox="0 0 24 24">
+      <rect x="3" y="8" width="9" height="6" rx="3" fill="none" stroke="#3a3f4b" stroke-width="2.4" transform="rotate(-35 7.5 11)"/>
+      <rect x="12" y="10" width="9" height="6" rx="3" fill="none" stroke="#3a3f4b" stroke-width="2.4" transform="rotate(-35 16.5 13)"/>
+      <path d="M4 21h16" stroke="#ffcc00" stroke-width="2.4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24">
+      <circle cx="10" cy="14" r="7" fill="#2d3142"/>
+      <circle cx="10" cy="5" r="2" fill="none" stroke="#2d3142" stroke-width="2"/>
+      <circle cx="18" cy="7" r="5" fill="#3bceac" stroke="#1d2b53" stroke-width="1.5"/>
+      <path d="M18 4.5v5M15.5 7h5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-boom" viewBox="0 0 24 24">
+      <path d="M12 1.5l2.2 5.3 5.6-2.2-2.4 5.4 5.1 2.5-5.5 1.6 1.6 5.6-5-3-2.6 5.2-1.4-5.6-5.7 1.4 3.3-4.8L1.5 9.8l5.7-.6-1-5.7 4.6 3.4z" fill="#ff5d73" stroke="#1d2b53" stroke-width="1.4" stroke-linejoin="round"/>
+      <circle cx="12" cy="12" r="3.4" fill="#ffd23f"/>
+    </symbol>
+    <symbol id="i-ziel" viewBox="0 0 24 24">
+      <circle cx="3.5" cy="18" r="1.6" fill="#3bceac"/>
+      <circle cx="7" cy="12.5" r="1.6" fill="#3bceac"/>
+      <circle cx="11.5" cy="8.5" r="1.6" fill="#3bceac"/>
+      <circle cx="16.5" cy="10" r="4.6" fill="none" stroke="#1d2b53" stroke-width="2"/>
+      <circle cx="16.5" cy="10" r="1.6" fill="#ff5d73"/>
+    </symbol>
+    <symbol id="i-gold" viewBox="0 0 24 24">
+      <rect x="3" y="5" width="18" height="15" rx="2" fill="#ffcc1a" stroke="#1d2b53" stroke-width="2"/>
+      <path d="M5 18L19 7" stroke="#c98400" stroke-width="2.2"/>
+      <circle cx="12" cy="12.5" r="3" fill="#fff3b0" stroke="#b37400" stroke-width="1.4"/>
+    </symbol>
+    <symbol id="i-schaden" viewBox="0 0 24 24">
+      <rect x="3" y="12" width="9" height="9" rx="1.5" fill="#f2a65a" stroke="#1d2b53" stroke-width="1.8" transform="rotate(-12 7.5 16.5)"/>
+      <rect x="12" y="9" width="9" height="12" rx="1.5" fill="#a7b0bd" stroke="#1d2b53" stroke-width="1.8" transform="rotate(18 16.5 15)"/>
+      <rect x="8" y="2" width="7" height="7" rx="1" fill="#aee8ff" stroke="#1d2b53" stroke-width="1.6" transform="rotate(30 11.5 5.5)"/>
+    </symbol>
+    <symbol id="i-kettenreaktion" viewBox="0 0 24 24">
+      <rect x="2" y="9" width="4" height="12" rx="1" fill="#f2a65a" stroke="#1d2b53" stroke-width="1.5" transform="rotate(-30 4 21)"/>
+      <rect x="9" y="9" width="4" height="12" rx="1" fill="#f2a65a" stroke="#1d2b53" stroke-width="1.5" transform="rotate(-18 11 21)"/>
+      <rect x="16" y="9" width="4" height="12" rx="1" fill="#f2a65a" stroke="#1d2b53" stroke-width="1.5"/>
+      <path d="M3 4h6m-2-2l2 2-2 2" fill="none" stroke="#ff5d73" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<canvas id="spielfeld"></canvas>
+
+<div id="hud">
+  <div id="hudLinks">
+    <div class="pille" id="levelAnzeige">Level 1</div>
+    <div class="pille" id="birnenAnzeige"></div>
+  </div>
+  <div id="hudMitte">
+    <div id="fortschritt">
+      <div id="balken"></div>
+      <div id="zielStrich"></div>
+      <svg class="icon marke ziel" id="marke0"><use href="#i-stern"/></svg>
+      <svg class="icon marke" id="marke1"><use href="#i-stern"/></svg>
+      <svg class="icon marke" id="marke2"><use href="#i-stern"/></svg>
+      <div id="prozentText">0%</div>
+    </div>
+  </div>
+  <div id="hudRechts">
+    <div class="pille" id="muenzAnzeige"><svg class="icon"><use href="#i-muenze"/></svg><span id="muenzZahl">0</span></div>
+    <button class="rundknopf" id="tonKnopf" aria-label="Sound"><svg class="icon"><use href="#i-ton-an"/></svg></button>
+  </div>
+</div>
+
+<div id="banner"><div id="bannerTitel">Level 1</div><div id="bannerZiel"></div></div>
+
+<div class="schleier" id="ergebnis">
+  <div class="karte">
+    <div id="ergSterne">
+      <svg class="icon s"><use href="#i-stern"/></svg>
+      <svg class="icon s"><use href="#i-stern"/></svg>
+      <svg class="icon s"><use href="#i-stern"/></svg>
+    </div>
+    <div id="ergTitel"></div>
+    <div id="ergProzent"></div>
+    <ul id="ergPosten"></ul>
+    <div id="ergSumme"><svg class="icon"><use href="#i-muenze"/></svg><span id="ergSummeZahl">+0</span></div>
+    <div class="knoepfe">
+      <button class="knopf" id="knopfNochmal" aria-label="Retry"><svg class="icon"><use href="#i-nochmal"/></svg></button>
+      <button class="knopf" id="knopfLaden" aria-label="Upgrades"><svg class="icon"><use href="#i-werkzeug"/></svg><span class="punkt" id="ladenPunkt">!</span></button>
+      <button class="knopf haupt" id="knopfWeiter"><span id="knopfWeiterText">Next</span><svg class="icon"><use href="#i-weiter"/></svg></button>
+    </div>
+  </div>
+</div>
+
+<div class="schleier" id="laden">
+  <div class="karte">
+    <div id="ladenTitel" style="font-size:26px;font-weight:900;margin-bottom:4px">Upgrades</div>
+    <div id="ladenMuenzen"><svg class="icon"><use href="#i-muenze"/></svg><span id="ladenMuenzZahl">0</span></div>
+    <div id="ladenGitter"></div>
+    <div class="knoepfe"><button class="knopf haupt" id="knopfLadenFertig">Done</button></div>
+  </div>
+</div>
+
+<!-- Klassische Skripte, keine Module: läuft per Doppelklick (file://) -->
+<script src="js/plattform.js"></script>
+<script src="lib/matter.min.js"></script>
+<script src="js/texte.js"></script>
+<script src="js/zufall.js"></script>
+<script src="js/level.js"></script>
+<script src="js/welt.js"></script>
+<script src="js/wertung.js"></script>
+<script src="js/fortschritt.js"></script>
+<script src="js/ton.js"></script>
+<script src="js/effekte.js"></script>
+<script src="js/darstellung.js"></script>
+<script src="js/spiel.js"></script>
+</body>
+</html>
